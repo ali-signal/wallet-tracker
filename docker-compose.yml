@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:10.3
+    restart: always
+    container_name: postgres
+    env_file:
+      - .env
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+
+  server:
+    container_name: server
+    restart: always
+    build: .
+    depends_on:
+      - postgres
+    volumes:
+      - .:/app
+      - /app/node_modules
+    expose:
+      - '4000'
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+
+volumes:
+  postgres:
