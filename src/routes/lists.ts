@@ -66,6 +66,32 @@ router.get("/active", async (req, res) => {
 });
 
 /**
+ * GET /api/lists/mine
+ * Get all lists of a user from the database
+ *
+ * @returns {List[]} lists - List of list
+ */
+router.get("/mine", async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    if (!userId) {
+      res.send([]);
+      return;
+    }
+
+    const lists = await prisma.list.findMany({
+      where: { userId },
+    });
+
+    res.json(lists);
+  } catch (error) {
+    logger.error(error);
+    res.status(500).send({ message: "Internal server error" });
+  }
+});
+
+/**
  * POST /api/lists
  * Create a new List
  * only premium and pro can access this endpoint
