@@ -11,6 +11,39 @@ const router = Router();
 const prisma = new PrismaClient();
 
 /**
+ * GET /api/wallets/:address
+ * Get wallet by address
+ *
+ * @param {string} address - wallet address
+ *
+ * @returns {Wallet} wallets - wallet
+ */
+router.get("/address/:address", async (req, res) => {
+  try {
+    const userId = getUserId(req);
+
+    const wallet = await prisma.wallet.findFirst({
+      where: { address: req.params.address },
+      include: {
+        aliases: {
+          where: {
+            userId: userId,
+          },
+        },
+      },
+    });
+
+    res.json({
+      ...wallet,
+      alias: wallet?.aliases.length ? wallet.aliases[0].alias : null,
+    });
+  } catch (error) {
+    logger.error(error);
+    res.status(500).send({ message: "Internal server error" });
+  }
+});
+
+/**
  * GET /api/wallets/:listId
  * Get all wallets in a list
  *
@@ -20,8 +53,16 @@ const prisma = new PrismaClient();
  */
 router.get("/:listId", async (req, res) => {
   try {
+    const userId = getUserId(req);
+
     const list = await prisma.list.findFirst({
       where: { id: req.params.listId },
+      include: {
+        followers: {
+          where: { userId },
+          select: { userId: true },
+        },
+      },
     });
 
     if (list?.active === false) {
@@ -48,7 +89,11 @@ router.get("/:listId", async (req, res) => {
     });
 
     res.json({
-      list,
+      list: {
+        ...list,
+        isFollowing: list?.followers?.length ?? 0 > 0,
+        isOwner: list?.userId === getUserId(req),
+      },
       wallets: wallets.map((w) => {
         return {
           ...w.wallet,
@@ -129,7 +174,7 @@ router.post("/add-to-list", async (req, res) => {
  * remove a wallet from a list
  * only pro and premium can access this endpoint
  *
- * @param {string} walletId - wallet id
+ * @param {string[]} wallets - wallets ids
  * @param {string?} listId - list id
  *
  * @returns {List} list - updated list
@@ -141,7 +186,7 @@ router.delete("/remove-from-list", async (req, res) => {
       return;
     }
 
-    const { walletId, listId } = req.body;
+    const { wallets, listId } = req.body;
 
     // a user can remove a wallet from list only if he is the owner of the list
     const ls = await prisma.list.findFirst({
@@ -153,15 +198,17 @@ router.delete("/remove-from-list", async (req, res) => {
       return;
     }
 
-    // remove association between wallet and list
-    await prisma.listWallet.delete({
-      where: { listId_walletId: { listId, walletId } },
+    wallets.forEach(async (w: string) => {
+      // remove association between wallet and list
+      await prisma.listWallet.delete({
+        where: { listId_walletId: { listId, walletId: w } },
+      });
     });
 
     // decrease wallets count for the list
     const updated = await prisma.list.update({
       where: { id: listId },
-      data: { walletsNumber: { decrement: 1 } },
+      data: { walletsNumber: { decrement: wallets.length } },
     });
 
     res.json(updated);

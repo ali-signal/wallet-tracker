@@ -56,6 +56,7 @@ router.get("/active", async (req, res) => {
         return {
           ...l,
           isFollowing: l.followers.length > 0,
+          isOwner: l.userId === userId,
         };
       })
     );
