@@ -166,11 +166,11 @@ router.put("/:listId", async (req, res) => {
     });
 
     if (hasPermission(writeNotificationsPermission, req.user?.permissions.permissions) || ls?.userId === userId) {
-      const { name, twitter, description } = req.body;
+      const { name, twitter, description, avatar } = req.body;
 
       const list = await prisma.list.update({
         where: { id: listId },
-        data: { name, twitter, description },
+        data: { name, twitter, description, avatar },
       });
 
       res.json(list);
