@@ -25,6 +25,10 @@ router.get("/address/:address", async (req, res) => {
     const wallet = await prisma.wallet.findFirst({
       where: { address: req.params.address },
       include: {
+        subscriptions: {
+          where: { userId: getUserId(req) },
+          select: { plan: true, chatId: true, userId: true },
+        },
         aliases: {
           where: {
             userId: userId,
@@ -35,6 +39,7 @@ router.get("/address/:address", async (req, res) => {
 
     res.json({
       ...wallet,
+      isSubscribed: wallet?.subscriptions ? wallet?.subscriptions.length > 0 : false,
       alias: wallet?.aliases.length ? wallet.aliases[0].alias : null,
     });
   } catch (error) {
@@ -98,6 +103,7 @@ router.get("/:listId", async (req, res) => {
         return {
           ...w.wallet,
           isSubscribed: w.wallet.subscriptions.length > 0,
+          alias: w?.wallet.aliases.length ? w.wallet.aliases[0].alias : null,
         };
       }),
     });
@@ -298,16 +304,16 @@ router.delete("/unsub/:walletId", async (req, res) => {
 });
 
 /**
- * PUT /api/wallets/alias/{walletId}
+ * PUT /api/wallets/alias/{walletAddress}
  * Add alias to a wallet
  * only pro and premium can access this endpoint
  *
- * @param {string} walletId - wallet Id
+ * @param {string} walletAddress - wallet Id
  * @param {string} alias - wallet alias
  *
  * @returns {Wallet} wallet - updated wallet
  */
-router.put("/alias/:walletId", async (req, res) => {
+router.put("/alias/:walletAddress", async (req, res) => {
   try {
     if (!hasPermissionOrScope(writeNotificationsPermission, notificationsScope, req)) {
       res.status(403).send({ message: "Forbidden" });
@@ -322,12 +328,25 @@ router.put("/alias/:walletId", async (req, res) => {
     }
 
     const { alias } = req.body;
-    const walletId = req.params.walletId;
+    const walletAddress = req.params.walletAddress;
+
+    const wallet = await prisma.wallet.findUnique({
+      where: { address: walletAddress },
+    });
+
+    if (!wallet) {
+      res.status(404).json({ error: "Wallet ID not found" });
+      return;
+    }
+
+    const aliasInDb = await prisma.userWalletAlias.findFirst({
+      where: { userId, walletId: wallet.id },
+    });
 
     const aliasResult = await prisma.userWalletAlias.upsert({
-      where: { userId_walletId: { userId, walletId } },
+      where: { id: aliasInDb ? aliasInDb.id : "" },
+      create: { alias, walletId: wallet.id, userId },
       update: { alias },
-      create: { walletId, alias, userId },
     });
 
     res.json(aliasResult);

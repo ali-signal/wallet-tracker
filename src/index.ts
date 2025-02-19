@@ -11,8 +11,13 @@ import { walletsRouter } from "./routes/wallets";
 import { chainhookRouter } from "./chainhook";
 import cors from "cors";
 import { allowedOrigins } from "./settings/cors";
+import { getUserId, hasPermissionOrScope } from "./services/auth";
+import { notificationsScope, writeNotificationsPermission } from "./settings/permissions";
+import { Feed } from "./services/feed";
 
 dotenv.config();
+
+const logger = require("pino")({ level: process.env.LOG_LEVEL || "info" });
 
 const prisma = new PrismaClient();
 
@@ -41,6 +46,38 @@ app.use("/api/bots", botsRouter);
 app.use("/api/lists", listsRouter);
 app.use("/api/wallets", walletsRouter);
 app.use("/api/chainhook", chainhookRouter);
+
+app.post("/api/feed", async (req, res) => {
+  try {
+    if (!hasPermissionOrScope(writeNotificationsPermission, notificationsScope, req)) {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+
+    const userId = getUserId(req);
+
+    if (!userId) {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+
+    const { addresses } = req.body;
+    const { offset } = req.query;
+
+    let feed: Feed | null = new Feed(req, addresses);
+    feed.setOffset(offset as string);
+
+    const data = await feed.getTxsOneQuery();
+
+    // grabage collection (remove feed)
+    feed = null;
+
+    res.json(data);
+  } catch (error) {
+    logger.error(error);
+    res.status(500).send({ message: "Internal server error" });
+  }
+});
 
 // health check / status / permissions
 if (process.env.NODE_ENV !== "production") {

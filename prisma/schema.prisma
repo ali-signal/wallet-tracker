@@ -85,8 +85,6 @@ model UserWalletAlias {
   alias    String
 
   wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, walletId])
 }
 
 model Bot {
