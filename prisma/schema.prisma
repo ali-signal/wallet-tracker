@@ -23,6 +23,7 @@ model List {
   userId          String
   followersNumber Int      @default(0)
   active          Boolean  @default(true)
+  public          Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

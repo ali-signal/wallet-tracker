@@ -42,7 +42,7 @@ router.get("/active", async (req, res) => {
     const userId = getUserId(req);
 
     const lists = await prisma.list.findMany({
-      where: { active: true, id: { not: defaultListId } },
+      where: { active: true, id: { not: defaultListId }, public: true },
       include: {
         followers: {
           where: { userId },
@@ -117,10 +117,10 @@ router.post("/", async (req, res) => {
       return;
     }
 
-    const { name, twitter, description, avatar } = req.body;
+    const { name, twitter, description, avatar, pub } = req.body;
 
     const list = await prisma.list.create({
-      data: { name, twitter, description, userId, avatar },
+      data: { name, twitter, description, userId, avatar, public: pub },
     });
 
     res.json(list);
@@ -166,11 +166,11 @@ router.put("/:listId", async (req, res) => {
     });
 
     if (hasPermission(writeNotificationsPermission, req.user?.permissions.permissions) || ls?.userId === userId) {
-      const { name, twitter, description, avatar } = req.body;
+      const { name, twitter, description, avatar, pub } = req.body;
 
       const list = await prisma.list.update({
         where: { id: listId },
-        data: { name, twitter, description, avatar },
+        data: { name, twitter, description, avatar, public: pub },
       });
 
       res.json(list);

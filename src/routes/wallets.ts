@@ -75,6 +75,11 @@ router.get("/:listId", async (req, res) => {
       return;
     }
 
+    if (list?.public === false && list.userId !== userId) {
+      res.json({ message: "Not found!" }).status(404);
+      return;
+    }
+
     const wallets = await prisma.listWallet.findMany({
       where: { listId: req.params.listId },
       include: {
@@ -330,9 +335,15 @@ router.put("/alias/:walletAddress", async (req, res) => {
     const { alias } = req.body;
     const walletAddress = req.params.walletAddress;
 
-    const wallet = await prisma.wallet.findUnique({
+    let wallet = await prisma.wallet.findUnique({
       where: { address: walletAddress },
     });
+
+    if (!wallet) {
+      wallet = await prisma.wallet.create({
+        data: { address: walletAddress },
+      });
+    }
 
     if (!wallet) {
       res.status(404).json({ error: "Wallet ID not found" });
