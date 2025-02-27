@@ -79,6 +79,60 @@ app.post("/api/feed", async (req, res) => {
   }
 });
 
+app.get("/api/feed/mine", async (req, res) => {
+  try {
+    if (!hasPermissionOrScope(writeNotificationsPermission, notificationsScope, req)) {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+
+    const userId = getUserId(req);
+
+    if (!userId) {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+
+    const { offset } = req.query;
+
+    const followedLists = await prisma.list.findMany({
+      where: { followers: { some: { userId } } },
+      include: {
+        wallets: {
+          include: {
+            wallet: true,
+          },
+        },
+      },
+    });
+
+    const followedWallets = await prisma.wallet.findMany({
+      where: { follows: { some: { userId } } },
+    });
+
+    let mergedWalletAddresses = [
+      ...followedLists
+        .map((l) => l.wallets)
+        .map((merged) => merged.map((w) => w.wallet.address))
+        .flat(),
+      ...followedWallets.map((w) => w.address),
+    ];
+
+    let feed: Feed | null = new Feed(req, mergedWalletAddresses);
+    feed.setOffset(offset as string);
+
+    const data = await feed.getTxsOneQuery();
+
+    // grabage collection (remove feed)
+    feed = null;
+
+    res.json({ wallets: mergedWalletAddresses, txs: data });
+  } catch (error) {
+    logger.error(error);
+    res.status(500).send({ message: "Internal server error" });
+  }
+});
+
 // health check / status / permissions
 if (process.env.NODE_ENV !== "production") {
   app.get("/", (req, res) => {

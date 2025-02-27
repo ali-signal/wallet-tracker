@@ -235,7 +235,7 @@ router.delete("/:listId", async (req, res) => {
  *
  * @param {string} listId - List ID
  *
- * @returns {ListFollow} follow - Created follow
+ * @returns {List} list - Updated List
  */
 router.post("/follow", async (req, res) => {
   try {
@@ -253,17 +253,43 @@ router.post("/follow", async (req, res) => {
 
     const { listId } = req.body;
 
-    const follow = await prisma.listFollow.create({
-      data: { listId, userId },
-    });
+    await prisma.listFollow.create({ data: { listId, userId } });
+
+    // creating follow object for all wallets in list
+    // 1. get all wallets in list
+    // 2. create all walletFollow
+    // NOTE: creating a wallet record is not necessary, it is already created since it is inside a list
+
+    // 1.
+    // const allWalletsInList = await prisma.listWallet.findMany({
+    //   where: { listId },
+    //   select: { wallet: true },
+    // });
+
+    // 2.
+    // await prisma.walletFollow.createMany({
+    //   data: allWalletsInList.map((w) => {
+    //     return { userId, walletId: w.wallet.id };
+    //   }),
+    // });
 
     // increment list followers count
-    await prisma.list.update({
+    const updated = await prisma.list.update({
       where: { id: listId },
       data: { followersNumber: { increment: 1 } },
+      include: {
+        followers: {
+          where: { userId },
+          select: { userId: true },
+        },
+      },
     });
 
-    res.json(follow);
+    res.json({
+      ...updated,
+      isFollowing: updated.followers.length > 0,
+      isOwner: updated.userId === userId,
+    });
   } catch (error) {
     logger.error(error);
     res.status(500).send({ message: "Internal server error" });
@@ -295,19 +321,49 @@ router.delete("/unfollow/:listId", async (req, res) => {
 
     const listId = req.params.listId;
 
-    await prisma.listFollow.delete({
-      where: {
-        listId_userId: { listId, userId },
-      },
+    const listFollow = await prisma.listFollow.findFirst({
+      where: { listId, userId },
     });
+
+    if (listFollow) {
+      await prisma.listFollow.delete({
+        where: { id: listFollow?.id },
+      });
+    }
+
+    // removing follow object for all wallets in list
+    // 1. get all wallets in list
+    // 2. delete all walletFollow
+    // NOTE: creating a wallet record is not necessary, it is already created since it is inside a list
+
+    // 1.
+    // const allWalletsInList = await prisma.listWallet.findMany({
+    //   where: { listId },
+    //   select: { wallet: true },
+    // });
+
+    // 2.
+    // await prisma.walletFollow.deleteMany({
+    //   where: { userId, walletId: { in: allWalletsInList.map((w) => w.wallet.id) } },
+    // });
 
     // decrement list followers count
     const updated = await prisma.list.update({
       where: { id: listId },
       data: { followersNumber: { decrement: 1 } },
+      include: {
+        followers: {
+          where: { userId },
+          select: { userId: true },
+        },
+      },
     });
 
-    res.json(updated);
+    res.json({
+      ...updated,
+      isFollowing: updated.followers.length > 0,
+      isOwner: updated.userId === userId,
+    });
   } catch (error) {
     logger.error(error);
     res.status(500).send({ message: "Internal server error" });

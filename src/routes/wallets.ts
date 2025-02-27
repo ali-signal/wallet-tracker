@@ -25,6 +25,7 @@ router.get("/address/:address", async (req, res) => {
     const wallet = await prisma.wallet.findFirst({
       where: { address: req.params.address },
       include: {
+        follows: { where: { userId } },
         subscriptions: {
           where: { userId: getUserId(req) },
           select: { plan: true, chatId: true, userId: true },
@@ -41,6 +42,7 @@ router.get("/address/:address", async (req, res) => {
       ...wallet,
       isSubscribed: wallet?.subscriptions ? wallet?.subscriptions.length > 0 : false,
       alias: wallet?.aliases.length ? wallet.aliases[0].alias : null,
+      isFollowing: wallet?.follows.length ?? 0 > 0,
     });
   } catch (error) {
     logger.error(error);
@@ -309,11 +311,44 @@ router.delete("/unsub/:walletId", async (req, res) => {
 });
 
 /**
+ * GET /api/wallets/aliases
+ * get all aliases set by a user
+ * only pro and premium can access this endpoint
+ * *
+ * @returns {UserWalletAlias} wallet alias
+ */
+router.get("/aliases/mine", async (req, res) => {
+  try {
+    if (!hasPermissionOrScope(writeNotificationsPermission, notificationsScope, req)) {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+
+    const userId = getUserId(req);
+
+    if (!userId) {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+
+    const aliasResult = await prisma.userWalletAlias.findMany({
+      where: { userId },
+      select: { alias: true, wallet: true },
+    });
+
+    res.json(aliasResult);
+  } catch (error) {
+    logger.error(error);
+    res.status(500).send({ message: "Internal server error" });
+  }
+});
+
+/**
  * PUT /api/wallets/alias/{walletAddress}
  * Add alias to a wallet
  * only pro and premium can access this endpoint
  *
- * @param {string} walletAddress - wallet Id
+ * @param {string} walletAddress - wallet address
  * @param {string} alias - wallet alias
  *
  * @returns {Wallet} wallet - updated wallet
@@ -361,6 +396,130 @@ router.put("/alias/:walletAddress", async (req, res) => {
     });
 
     res.json(aliasResult);
+  } catch (error) {
+    logger.error(error);
+    res.status(500).send({ message: "Internal server error" });
+  }
+});
+
+/**
+ * POST /api/wallets/follow/:walletAddress
+ * Follow a wallet
+ * only premium and pro can access this endpoint
+ *
+ * @param {string} walletId - Wallet ID
+ *
+ * @returns {Wallet} wallet - Wallet
+ */
+router.post("/follow/:walletAddress", async (req, res) => {
+  try {
+    if (!hasPermissionOrScope(writeNotificationsPermission, notificationsScope, req)) {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+
+    const userId = getUserId(req);
+
+    if (!userId) {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+
+    const walletAddress = req.params.walletAddress;
+
+    let wallet = await prisma.wallet.findFirst({ where: { address: walletAddress } });
+
+    if (!wallet) {
+      wallet = await prisma.wallet.create({ data: { address: walletAddress } });
+    }
+
+    const walletFollow = await prisma.walletFollow.create({
+      data: { userId, walletId: wallet.id },
+      include: {
+        wallet: {
+          include: {
+            subscriptions: {
+              where: { userId: getUserId(req) },
+              select: { plan: true, chatId: true, userId: true },
+            },
+            aliases: {
+              where: {
+                userId: userId,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    res.json({
+      ...walletFollow.wallet,
+      isSubscribed: walletFollow.wallet?.subscriptions ? walletFollow.wallet?.subscriptions.length > 0 : false,
+      alias: walletFollow.wallet?.aliases.length ? walletFollow.wallet.aliases[0].alias : null,
+      isFollowing: true,
+    });
+  } catch (error) {
+    logger.error(error);
+    res.status(500).send({ message: "Internal server error" });
+  }
+});
+
+/**
+ * DELETE /api/wallets/unfollow/:walletId
+ * Unfollow a wallet
+ * only premium and pro can access this endpoint
+ *
+ * @param {string} walletId - Wallet ID
+ *
+ * @returns {Wallet} wallet - Updated wallet after unfollow
+ */
+router.delete("/unfollow/:walletId", async (req, res) => {
+  try {
+    if (!hasPermissionOrScope(writeNotificationsPermission, notificationsScope, req)) {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+
+    const userId = getUserId(req);
+
+    if (!userId) {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+
+    const walletId = req.params.walletId;
+
+    const walletFollow = await prisma.walletFollow.findFirst({
+      where: { userId, walletId },
+      include: {
+        wallet: {
+          include: {
+            subscriptions: {
+              where: { userId: getUserId(req) },
+              select: { plan: true, chatId: true, userId: true },
+            },
+            aliases: {
+              where: {
+                userId: userId,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (walletFollow) {
+      await prisma.walletFollow.delete({
+        where: { id: walletFollow?.id },
+      });
+    }
+
+    res.json({
+      ...walletFollow?.wallet,
+      isSubscribed: walletFollow?.wallet?.subscriptions ? walletFollow?.wallet?.subscriptions.length > 0 : false,
+      alias: walletFollow?.wallet?.aliases.length ? walletFollow?.wallet.aliases[0].alias : null,
+      isFollowing: false,
+    });
   } catch (error) {
     logger.error(error);
     res.status(500).send({ message: "Internal server error" });

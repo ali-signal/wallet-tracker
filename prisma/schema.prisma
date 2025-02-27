@@ -38,8 +38,6 @@ model ListFollow {
   createdAt DateTime @default(now())
 
   list List @relation(fields: [listId], references: [id], onDelete: Cascade)
-
-  @@unique([listId, userId])
 }
 
 model ListWallet {
@@ -62,6 +60,16 @@ model Wallet {
   lists         ListWallet[]
   subscriptions Subscription[]
   aliases       UserWalletAlias[]
+  follows       WalletFollow[]
+}
+
+model WalletFollow {
+  id        String   @id @default(uuid())
+  walletId  String
+  userId    String
+  createdAt DateTime @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 }
 
 model Subscription {
