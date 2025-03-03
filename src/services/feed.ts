@@ -1,31 +1,23 @@
-import { Request } from "express";
 const logger = require("pino")({ level: process.env.LOG_LEVEL || "info" });
 
 export class Feed {
-  headers: HeadersInit = {};
+  authorization?: string;
   addresses: string = "";
-  frontendServer: string | undefined;
+  frontendServer?: string;
   limit = 10;
   offset = 0;
 
-  constructor(req: Request, addresses: string[]) {
-    const headers: HeadersInit = {};
-
-    if (req.headers["authorization"]) {
-      headers["Authorization"] = req.headers["authorization"];
-    }
-
-    if (req.headers["wallet-address"]) {
-      headers["wallet-address"] = req.headers["wallet-address"] as string;
-    }
-
-    this.headers = headers;
+  constructor(addresses: string[]) {
     this.addresses = addresses.map((address) => `'${address}'`).join(", ");
     this.frontendServer = process.env.FRONTEND_SERVER_URL;
   }
 
   setOffset(offset: string) {
     this.offset = parseInt(offset);
+  }
+
+  setAuthorization(authorization?: string) {
+    this.authorization = authorization;
   }
 
   async getAllEvents(block: number) {
@@ -91,6 +83,21 @@ export class Feed {
         ORDER BY block_time DESC
 
         LIMIT ${this.limit} OFFSET ${this.offset};
+    `;
+
+    const response = await this.fetchQuery(query);
+
+    if (!response.ok) return [];
+
+    const result = await response.json();
+    return this.stacksData2Array(result);
+  }
+
+  async getTokenProperties(identifiers: string[]) {
+    const query = `
+      SELECT *
+      FROM TOKEN_PROPERTIES
+      WHERE contract_id IN (${identifiers.map((i) => `'${i}'`).join(", ")})
     `;
 
     const response = await this.fetchQuery(query);
@@ -251,9 +258,11 @@ export class Feed {
       return Promise.resolve(new Response(null, { status: 400 }));
     }
 
-    return fetch(this.frontendServer.concat(`/v1/run?backend=stacks`), {
+    return fetch(this.frontendServer.concat(`/v3/run?backend=stacks`), {
       method: "POST",
-      headers: this.headers,
+      headers: {
+        Authorization: `Bearer ${this.authorization}`,
+      },
       body: JSON.stringify({ query, backend: "stacks" }),
     });
   }

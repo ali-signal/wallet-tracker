@@ -104,3 +104,10 @@ model Bot {
 
   Subscription Subscription[]
 }
+
+model AccessToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}

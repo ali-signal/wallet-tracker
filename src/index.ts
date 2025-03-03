@@ -11,8 +11,8 @@ import { walletsRouter } from "./routes/wallets";
 import { chainhookRouter } from "./chainhook";
 import cors from "cors";
 import { allowedOrigins } from "./settings/cors";
-import { getUserId, hasPermissionOrScope } from "./services/auth";
-import { notificationsScope, writeNotificationsPermission } from "./settings/permissions";
+import { AuthorizeServer, getUserId, hasPermissionOrScope } from "./services/auth";
+import { notificationsScope, readNotificationsPermission } from "./settings/permissions";
 import { Feed } from "./services/feed";
 
 dotenv.config();
@@ -49,7 +49,7 @@ app.use("/api/chainhook", chainhookRouter);
 
 app.post("/api/feed", async (req, res) => {
   try {
-    if (!hasPermissionOrScope(writeNotificationsPermission, notificationsScope, req)) {
+    if (!hasPermissionOrScope(readNotificationsPermission, notificationsScope, req)) {
       res.status(403).send({ message: "Forbidden" });
       return;
     }
@@ -64,13 +64,18 @@ app.post("/api/feed", async (req, res) => {
     const { addresses } = req.body;
     const { offset } = req.query;
 
-    let feed: Feed | null = new Feed(req, addresses);
+    let authorizeServer: AuthorizeServer | null = new AuthorizeServer(prisma);
+    await authorizeServer.init();
+
+    let feed: Feed | null = new Feed(addresses);
     feed.setOffset(offset as string);
+    feed.setAuthorization(authorizeServer.token);
 
     const data = await feed.getTxsOneQuery();
 
     // grabage collection (remove feed)
     feed = null;
+    authorizeServer = null;
 
     res.json(data);
   } catch (error) {
@@ -81,7 +86,7 @@ app.post("/api/feed", async (req, res) => {
 
 app.get("/api/feed/mine", async (req, res) => {
   try {
-    if (!hasPermissionOrScope(writeNotificationsPermission, notificationsScope, req)) {
+    if (!hasPermissionOrScope(readNotificationsPermission, notificationsScope, req)) {
       res.status(403).send({ message: "Forbidden" });
       return;
     }
@@ -118,15 +123,55 @@ app.get("/api/feed/mine", async (req, res) => {
       ...followedWallets.map((w) => w.address),
     ];
 
-    let feed: Feed | null = new Feed(req, mergedWalletAddresses);
+    let authorizeServer: AuthorizeServer | null = new AuthorizeServer(prisma);
+    await authorizeServer.init();
+
+    let feed: Feed | null = new Feed(mergedWalletAddresses);
     feed.setOffset(offset as string);
+    feed.setAuthorization(authorizeServer.token);
 
     const data = await feed.getTxsOneQuery();
 
     // grabage collection (remove feed)
     feed = null;
+    authorizeServer = null;
 
     res.json({ wallets: mergedWalletAddresses, txs: data });
+  } catch (error) {
+    logger.error(error);
+    res.status(500).send({ message: "Internal server error" });
+  }
+});
+
+app.post("/api/token/properties", async (req, res) => {
+  try {
+    if (!hasPermissionOrScope(readNotificationsPermission, notificationsScope, req)) {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+
+    const userId = getUserId(req);
+
+    if (!userId) {
+      res.status(403).send({ message: "Forbidden" });
+      return;
+    }
+
+    const { identifiers } = req.body;
+
+    let authorizeServer: AuthorizeServer | null = new AuthorizeServer(prisma);
+    await authorizeServer.init();
+
+    let feed: Feed | null = new Feed([]);
+    feed.setAuthorization(authorizeServer.token);
+
+    const data = await feed.getTokenProperties(identifiers);
+
+    // grabage collection (remove feed, auth)
+    feed = null;
+    authorizeServer = null;
+
+    res.json(data);
   } catch (error) {
     logger.error(error);
     res.status(500).send({ message: "Internal server error" });
